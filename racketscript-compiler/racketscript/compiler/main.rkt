@@ -186,15 +186,19 @@
 
 ;;;; Generate stub module
 
-;; Module -> ILModule
-;; Applies the enabled optimization to translated Absyn
+;; Module -> (Listof (List Natural ILModule))
+;; Applies the enabled optimization to translated Absyn, and returns
+;; a list of (PhaseNumber ILModule) pair for each phase.
 (define (absyn-module->il* ast)
-  (define il (absyn-module->il ast))
+  (define phase+il* (absyn-module->il ast))
   (define (apply-optimizations il)
     (for/fold ([il il])
               ([opt (in-set (enabled-optimizations))])
       (il-apply-optimization il opt)))
-  (converge apply-optimizations il))
+  (map (λ (phase+il)
+         (match-define (list phase il) phase+il)
+         (list phase (converge apply-optimizations il)))
+       phase+il*))
 
 ;; Path-String -> (Listof Symbol)
 ;; Read the runtime JavaScript file which, and find all the primitives
@@ -294,17 +298,21 @@
        (define renamed (freshen-module expanded))
        (define ast (convert renamed (override-module-path next)))
 
-       (assemble-module (absyn-module->il* ast) #f)
+       (for ([mpf (absyn-module->il* ast)])
+         (match-define (list phase mod) mpf)
+         (log-rjs-info "[assembling] for Phase ~a" phase)
+         (assemble-module mod #f))
 
        ;; Run JS beautifier
        (when (js-output-beautify?)
          (system (format "js-beautify -r ~a" (module-output-file next))))
 
-       (for ([mod (in-set (Module-imports ast))])
-         (match mod
-           [(? symbol? _) (void)]
-           [_ #:when (collects-module? mod) (void) #;(put-to-pending! mod)]
-           [_ (put-to-pending! mod)]))
+       (for ([mpf (Module-forms ast)])
+         (for ([mod (in-set (second mpf))])
+           (match mod
+             [(? symbol? _) (void)]
+             [_ #:when (collects-module? mod) (void) #;(put-to-pending! mod)]
+             [_ (put-to-pending! mod)])))
        (loop)]
       [(false? next)
        (dump-module-timestamps! timestamps)

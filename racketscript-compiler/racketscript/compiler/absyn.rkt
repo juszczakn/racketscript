@@ -4,11 +4,13 @@
 
 (provide (all-defined-out))
 
+(define-type ModulePhaseForms (List Natural                       ;; Phase
+                                    (Setof ModuleName)            ;; Imports
+                                    (Listof ModuleLevelForm)))    ;; Forms
+
 (struct Module  ([id      : Symbol]
                  [path    : Path]
-                 [lang    : (U Symbol String (Listof Symbol))]
-                 [imports : (Setof (U Path Symbol))]
-                 [forms   : (Listof ModuleLevelForm)])
+                 [forms   : (Listof ModulePhaseForms)])
   #:transparent)
 
 (define-language Absyn

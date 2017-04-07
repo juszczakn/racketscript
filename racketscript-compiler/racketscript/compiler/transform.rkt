@@ -53,10 +53,19 @@
     [else (error "only modules supported at top level")]))
 
 
-(: absyn-module->il (-> Module ILModule))
+(: absyn-module->il (-> Module (Listof (List Natural ILModule))))
 (define (absyn-module->il mod)
-  (match-define (Module id path lang imports forms) mod)
+  (match-define (Module id path mod-phase-forms*) mod)
   (log-rjs-info "[il] ~a" id)
+  (map (λ ([mpf : ModulePhaseForms])
+         (list (first mpf)
+               (absyn-module-phase-form->il path mpf)))
+       mod-phase-forms*))
+
+
+(: absyn-module-phase-form->il (-> Path ModulePhaseForms ILModule))
+(define (absyn-module-phase-form->il path mod-phase-forms)
+  (match-define (list phase imports forms) mod-phase-forms)
 
   (: provides (Boxof ILProvide*))
   (define provides (box '()))
@@ -87,7 +96,7 @@
         (match mod-path
           [(? symbol? _)
            (jsruntime-import-path path
-                                  (jsruntime-module-path mod-path))]
+                                 (jsruntime-module-path mod-path))]
           [_ (module->relative-import (cast mod-path Path))]))
       ;; See expansion of identifier in `expand.rkt` for primitive
       ;; modules
