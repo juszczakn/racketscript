@@ -224,28 +224,29 @@
          (emit ")"))
        (emit ";")]))
 
-(: assemble-module (-> ILModule (Option Output-Port) Void))
-(define (assemble-module mod maybeout)
+(: assemble-module (-> ILModule Natural (Option Output-Port) Void))
+(define (assemble-module mod phase maybeout)
   (match-define (ILModule id provides requires body) mod)
   (log-rjs-info "[assemble] ~a" id)
   (let ([cb (λ ([out : Output-Port])
-              (assemble-requires* requires out)
+              (assemble-requires* requires phase out)
               (for ([b body])
                 (assemble-statement b out))
               (assemble-provides* provides out))])
     (if maybeout
         (cb maybeout)
         ;; For all other cases we need a valid module name, eg. kernel
-        (call-with-output-file (module-output-file (assert id path?))
+        (call-with-output-file (module-output-file (assert id path?) phase)
           #:exists 'replace
           cb))))
 
-(: assemble-requires* (-> ILRequire* Output-Port Void))
-(define (assemble-requires* reqs* out)
+(: assemble-requires* (-> ILRequire* Natural Output-Port Void))
+(define (assemble-requires* reqs* phase out)
   (define emit (curry fprintf out))
   (define core-import-path
     ;; (current-source-file) should not be false, else abort
     (jsruntime-import-path (cast (current-source-file) (U Symbol Path))
+                           phase
                            (jsruntime-module-path 'core)))
 
   (emit (format "import * as ~a from '~a';"

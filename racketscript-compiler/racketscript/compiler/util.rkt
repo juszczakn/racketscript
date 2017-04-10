@@ -228,8 +228,8 @@
 (define (main-source-directory)
   (path-parent (assert (main-source-file) path?)))
 
-(: jsruntime-import-path (-> (U Path Symbol) Path Path))
-(define (jsruntime-import-path base runtime-fpath)
+(: jsruntime-import-path (-> (U Path Symbol) Natural Path Path))
+(define (jsruntime-import-path base phase runtime-fpath)
   ;; TODO: Make runtime, modules, and everything united!
   (: fix-for-down (-> Path Path))
   (define (fix-for-down p)
@@ -238,7 +238,7 @@
         p
         (build-path (~a "./" p-str))))
   (fix-for-down
-   (cast (find-relative-path (path-parent (module-output-file base))
+   (cast (find-relative-path (path-parent (module-output-file base phase))
                              runtime-fpath)
          Path)))
 
@@ -276,24 +276,24 @@
                   (~a (substring (symbol->string mod) 2) ".rkt"))
       mod))
 
-(: module-output-file (-> (U Path Symbol) Path))
-(define (module-output-file mod)
+(: module-output-file (-> (U Path Symbol) Natural Path))
+(define (module-output-file mod phase)
   (match (module-kind mod)
     [(list 'primitive mod-path)
      ;; Eg. #%kernel, #%utils ...
      (path->complete-path
       (build-path (output-directory)
                   "runtime"
-                  (~a (substring (symbol->string mod-path) 2) ".rkt.js")))]
+                  (~a (substring (symbol->string mod-path) 2) "_" phase ".rkt.js")))]
     [(list 'runtime rel-path)
      (path->complete-path
-      (build-path (output-directory) "runtime" (~a rel-path ".js")))]
+      (build-path (output-directory) "runtime" (~a rel-path "_" phase ".js")))]
     [(list 'collects base rel-path)
      (path->complete-path
-      (build-path (output-directory) "collects" (~a rel-path ".js")))]
+      (build-path (output-directory) "collects" (~a rel-path "_" phase ".js")))]
     [(list 'links name root-path rel-path)
      (define output-path
-       (build-path (output-directory) "links" name (~a rel-path ".js")))
+       (build-path (output-directory) "links" name (~a rel-path "_" phase ".js")))
      ;; because we just created root links directory, but files could be
      ;; deep arbitrarily inside
      (make-directory* (assert (path-only output-path) path?))
@@ -303,10 +303,10 @@
      (let* ([main (assert (main-source-file) path?)]
             [rel-path (find-relative-path (path-parent main) mod-path)])
        (path->complete-path
-        (build-path (output-directory) "modules" (~a rel-path ".js"))))]))
+        (build-path (output-directory) "modules" (~a rel-path "_" phase ".js"))))]))
 
-(: module->relative-import (-> Path Path))
-(define (module->relative-import mod-path)
+(: module->relative-import (-> Path Natural Path))
+(define (module->relative-import mod-path phase)
   ;; ES6 modules imports need "./" prefix for importing relatively
   ;; to current module, rather than relative to main module. Weird :/
   (: fix-for-down (-> Path Path))
@@ -319,8 +319,8 @@
   (let ([src (current-source-file)])
     (if src
         (fix-for-down
-         (cast (find-relative-path (path-parent (module-output-file src))
-                                   (module-output-file mod-path))
+         (cast (find-relative-path (path-parent (module-output-file src phase))
+                                   (module-output-file mod-path phase))
                Path))
          (error 'module->relative-import "current-source-file is #f"))))
 

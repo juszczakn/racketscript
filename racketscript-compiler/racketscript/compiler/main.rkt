@@ -248,7 +248,7 @@
 ;;  - if the JavaScript output file exists
 (define (skip-module-compile? ts mod)
   (and (not (recompile-all-modules?))
-       (file-exists? (module-output-file mod))
+       (file-exists? (module-output-file mod 0))  ;;HACK: Just check phase 0
        (= (get-module-timestamp ts mod)
           (file-or-directory-modify-seconds (actual-module-path mod)))))
 
@@ -291,7 +291,7 @@
        (loop)]
       [next
        (current-source-file next)
-       (make-directory* (path-only (module-output-file next)))
+       (make-directory* (path-only (module-output-file next 0)))
        (save-module-timestamp! timestamps next)
 
        (define expanded (quick-expand next))
@@ -300,12 +300,12 @@
 
        (for ([mpf (absyn-module->il* ast)])
          (match-define (list phase mod) mpf)
-         (log-rjs-info "[assembling] for Phase ~a" phase)
-         (assemble-module mod #f))
+         (assemble-module mod phase #f)
 
-       ;; Run JS beautifier
-       (when (js-output-beautify?)
-         (system (format "js-beautify -r ~a" (module-output-file next))))
+         ;; Run JS beautifier
+         (when (js-output-beautify?)
+           (system
+            (format "js-beautify -r ~a" (module-output-file next phase)))))
 
        (for ([mpf (Module-forms ast)])
          (for ([mod (in-set (second mpf))])

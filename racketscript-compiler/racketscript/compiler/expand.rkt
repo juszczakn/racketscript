@@ -350,7 +350,8 @@
          (Module mod-id
                  path
                  (for/list ([(phase forms) forms/phase])
-                   (parameterize ([current-module-imports (set)])
+                   (parameterize ([current-module-imports (set)]
+                                  [current-phase phase])
                      (log-rjs-info "[absyn] ~a" mod-id)
                      (let* ([ast (filter-map to-absyn forms)]
                             [imports (current-module-imports)])

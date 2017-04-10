@@ -96,8 +96,9 @@
         (match mod-path
           [(? symbol? _)
            (jsruntime-import-path path
-                                 (jsruntime-module-path mod-path))]
-          [_ (module->relative-import (cast mod-path Path))]))
+                                  phase
+                                  (jsruntime-module-path mod-path))]
+          [_ (module->relative-import (cast mod-path Path) phase)]))
       ;; See expansion of identifier in `expand.rkt` for primitive
       ;; modules
       (if (or (and (primitive-module? mod-path)  ;; a self-import cycle
