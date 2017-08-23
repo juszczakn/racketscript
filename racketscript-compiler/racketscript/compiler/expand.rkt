@@ -44,9 +44,11 @@
          to-absyn
          to-absyn/top
          read-and-expand-module
+         identifier-table
          quick-expand)
 
 (define current-module (make-parameter #f))
+(define identifier-table (make-parameter #f))
 (define current-phase (make-parameter 0))
 (define quoted? (make-parameter #f))
 
@@ -99,16 +101,16 @@
     [((~datum protect) p ...) '()]
     [_ #;(error "unsupported provide form " (syntax->datum r)) '()]))
 
-(define (to-absyn v)
-  (define (formals->absyn formals)
-    (parameterize ([quoted? #t])
-      (let ([f (to-absyn formals)])
-        (cond
-          [(or (list? f) (symbol? f)) f]
-          [(cons? f) (let-values ([(fp fi) (splitf-at f identity)])
-                       (cons fp fi))]
-          [else (error 'λ "invalid λ formals")]))))
+(define (formals->absyn formals)
+  (let ([f (to-absyn formals)])
+    (cond
+      [(LocalIdent? f) f]
+      [(list? f) f]
+      [(cons? f) (let-values ([(fp fi) (splitf-at f identity)])
+                   (cons fp fi))]
+      [else (error 'λ "invalid λ formals")])))
 
+(define (to-absyn v)
   (syntax-parse v
     #:literal-sets ((kernel-literals #:phase (current-phase)))
     [v:str (syntax-e #'v)]
@@ -132,16 +134,14 @@
     [(if e0 e1 e2)
      (If (to-absyn #'e0) (to-absyn #'e1) (to-absyn #'e2))]
     [(let-values ([xs es] ...) b ...)
-     (LetValues (for/list ([x (syntax->list #'(xs ...))]
+     (LetValues (for/list ([x (to-absyn #'(xs ...))]
                            [e (syntax->list #'(es ...))])
-                  (cons (syntax->datum x)
-                        (to-absyn e)))
+                  (cons x (to-absyn e)))
                 (map to-absyn (syntax->list #'(b ...))))]
     [(letrec-values ([xs es] ...) b ...)
-     (LetValues (for/list ([x (syntax->list #'(xs ...))]
+     (LetValues (for/list ([x (to-absyn #'(xs ...))]
                            [e (syntax->list #'(es ...))])
-                  (cons (syntax->datum x)
-                        (to-absyn e)))
+                  (cons x (to-absyn e)))
                 (map to-absyn (syntax->list #'(b ...))))]
     [(quote e) (Quote
                 (parameterize ([quoted? #t])
@@ -171,10 +171,12 @@
      ;; HACK: Special case for JSRequire
      (JSRequire (syntax-e #'name) (syntax-e #'mod) '*)]
     [(define-values (id ...) b)
-     (DefineValues (syntax->datum #'(id ...)) (to-absyn #'b))]
+     (DefineValues (to-absyn #'(id ...)) (to-absyn #'b))]
     [(#%top . x) (TopId (syntax-e #'x))]
     [(#%variable-reference x) (to-absyn #'x)]
     [i:identifier #:when (quoted?) (syntax-e #'i)]
+    [i:identifier #:when (dict-ref (identifier-table) #'i #f)
+     (dict-ref (identifier-table) #'i)]
     [i:identifier
      (define (rename-module mpath)
        ;; Rename few modules for simpler compilation
@@ -183,90 +185,93 @@
          #;[(collects-module? mpath) (list #t '#%kernel)]
          [else (list #f mpath)]))
      (define ident-sym (syntax-e #'i))
+     (define result
 
-     (match (identifier-binding #'i)
-       ['lexical (LocalIdent ident-sym)]
-       [#f (TopLevelIdent ident-sym)]
-       [(list src-mod src-id nom-src-mod mod-src-id src-phase import-phase nominal-export-phase)
-        ;; from where we import
-        (match-define (list src-mod-path-orig self?) (index->path src-mod))
-        (match-define (list nom-src-mod-path-orig _) (index->path nom-src-mod))
-        (match-define (list module-renamed? src-mod-path) (rename-module src-mod-path-orig))
+       (match (identifier-binding #'i)
+         ['lexical (LocalIdent ident-sym)]
+         [#f (TopLevelIdent ident-sym)]
+         [(list src-mod src-id nom-src-mod mod-src-id src-phase import-phase nominal-export-phase)
+          ;; from where we import
+          (match-define (list src-mod-path-orig self?) (index->path src-mod))
+          (match-define (list nom-src-mod-path-orig _) (index->path nom-src-mod))
+          (match-define (list module-renamed? src-mod-path) (rename-module src-mod-path-orig))
 
-        (cond
-          [self? (LocalIdent ident-sym)]
-          [else
-           ;; Add the module from where we actual import this, so that we import this, and
-           ;; any side-effects due to this module is actually executed
-           ;(match-define (list nom-mod-path _) (index->path nom-src-mod))
-           ;(current-module-imports (set-add (current-module-imports) nom-mod-path))
+          (cond
+            [self? (LocalIdent ident-sym)]
+            [else
+             ;; Add the module from where we actual import this, so that we import this, and
+             ;; any side-effects due to this module is actually executed
+             ;(match-define (list nom-mod-path _) (index->path nom-src-mod))
+             ;(current-module-imports (set-add (current-module-imports) nom-mod-path))
 
-           ;; And still add the actual module where identifier is defined for easy
-           ;; and compact import. NOTE:In future we may want to remove this and
-           ;; compute this with moddeps information.
-           (current-module-imports (set-add (current-module-imports) src-mod-path))
+             ;; And still add the actual module where identifier is defined for easy
+             ;; and compact import. NOTE:In future we may want to remove this and
+             ;; compute this with moddeps information.
+             (current-module-imports (set-add (current-module-imports) src-mod-path))
 
-           ;;HACK: See test/struct/import-struct.rkt. Somehow, the
-           ;;  struct contructor has different src-id returned by
-           ;;  identifier-binding than the actual identifier name used
-           ;;  at definition site. Implicit renaming due to macro
-           ;;  expansion?
-           ;;
-           ;;HACK: See tests/modules/rename-and-import.rkt and
-           ;;  tests/rename-from-primitive.rkt. When importing from a
-           ;;  module with a rename, identifier-binding's, mod-src-id
-           ;;  shows the renamed id, i.e. the one it is imported as
-           ;;  instead of what it is exported as. We handle this
-           ;;  special case where both src-mod and nom-src-mod are
-           ;;  equal. If both source module and normalized module are
-           ;;  same with different ids:
-           ;;  - Check if nom-src-id is exported and use that. Or,
-           ;;  - Check if src-id is exported and use that. Or,
-           ;;  - Fallback to module source id.
-           (define-values (id-to-follow path-to-symbol)
-             (cond
-               [(and (equal? src-mod nom-src-mod)
-                     (not (equal? src-id mod-src-id)))
-                (let ([path-to-symbol-src (follow-symbol (global-export-graph)
-                                                         nom-src-mod-path-orig
-                                                         mod-src-id)])
-                  (if path-to-symbol-src
-                      (values mod-src-id path-to-symbol-src)
-                      (let ([path-to-symbol-nom (follow-symbol (global-export-graph)
-                                                               nom-src-mod-path-orig
-                                                               src-id)])
-                        (if path-to-symbol-nom
-                            (values src-id path-to-symbol-nom)
-                            (values mod-src-id #f)))))]
-               [else (values mod-src-id
-                             (follow-symbol (global-export-graph)
-                                            nom-src-mod-path-orig
-                                            mod-src-id))]))
+             ;;HACK: See test/struct/import-struct.rkt. Somehow, the
+             ;;  struct contructor has different src-id returned by
+             ;;  identifier-binding than the actual identifier name used
+             ;;  at definition site. Implicit renaming due to macro
+             ;;  expansion?
+             ;;
+             ;;HACK: See tests/modules/rename-and-import.rkt and
+             ;;  tests/rename-from-primitive.rkt. When importing from a
+             ;;  module with a rename, identifier-binding's, mod-src-id
+             ;;  shows the renamed id, i.e. the one it is imported as
+             ;;  instead of what it is exported as. We handle this
+             ;;  special case where both src-mod and nom-src-mod are
+             ;;  equal. If both source module and normalized module are
+             ;;  same with different ids:
+             ;;  - Check if nom-src-id is exported and use that. Or,
+             ;;  - Check if src-id is exported and use that. Or,
+             ;;  - Fallback to module source id.
+             (define-values (id-to-follow path-to-symbol)
+               (cond
+                 [(and (equal? src-mod nom-src-mod)
+                       (not (equal? src-id mod-src-id)))
+                  (let ([path-to-symbol-src (follow-symbol (global-export-graph)
+                                                           nom-src-mod-path-orig
+                                                           mod-src-id)])
+                    (if path-to-symbol-src
+                        (values mod-src-id path-to-symbol-src)
+                        (let ([path-to-symbol-nom (follow-symbol (global-export-graph)
+                                                                 nom-src-mod-path-orig
+                                                                 src-id)])
+                          (if path-to-symbol-nom
+                              (values src-id path-to-symbol-nom)
+                              (values mod-src-id #f)))))]
+                 [else (values mod-src-id
+                               (follow-symbol (global-export-graph)
+                                              nom-src-mod-path-orig
+                                              mod-src-id))]))
 
-           ;; If the moduele is renamed use the id name used at the importing
-           ;; module rather than defining module. Since renamed, module currently
-           ;; are #%kernel which we write ourselves in JS we prefer original name.
-           ;; TODO: We potentially might have clashes, but its unlikely.
-           (define-values (effective-id effective-mod reachable?)
-             (cond
-               [module-renamed? (values mod-src-id src-mod-path #t)]
-               [(false? path-to-symbol)
-                (when (and (not (ignored-undefined-identifier? #'i))
-                           (symbol? src-mod-path))
-                  ;; Since free id's are anyway caught by Racket, just
-                  ;; complain about the primitives.
-                  (log-rjs-warning
-                   "Implementation of identifier ~a not found in module ~a!"
-                   (syntax-e #'i) src-mod-path))
-                (values id-to-follow src-mod-path #f)]
-               [else
-                (match-let ([(cons (app last mod) (? symbol? id)) path-to-symbol])
-                  (values id mod #t))]))
+             ;; If the moduele is renamed use the id name used at the importing
+             ;; module rather than defining module. Since renamed, module currently
+             ;; are #%kernel which we write ourselves in JS we prefer original name.
+             ;; TODO: We potentially might have clashes, but its unlikely.
+             (define-values (effective-id effective-mod reachable?)
+               (cond
+                 [module-renamed? (values mod-src-id src-mod-path #t)]
+                 [(false? path-to-symbol)
+                  (when (and (not (ignored-undefined-identifier? #'i))
+                             (symbol? src-mod-path))
+                    ;; Since free id's are anyway caught by Racket, just
+                    ;; complain about the primitives.
+                    (log-rjs-warning
+                     "Implementation of identifier ~a not found in module ~a!"
+                     (syntax-e #'i) src-mod-path))
+                  (values id-to-follow src-mod-path #f)]
+                 [else
+                  (match-let ([(cons (app last mod) (? symbol? id)) path-to-symbol])
+                    (values id mod #t))]))
 
-           (ImportedIdent effective-id effective-mod reachable?)])])]
+             (ImportedIdent effective-id effective-mod reachable?)])]))
+     (dict-set! (identifier-table) #'i result)
+     result]
     [(define-syntaxes (i ...) b) #f]
     [(set! s e)
-     (Set! (syntax-e #'s) (to-absyn #'e))]
+     (Set! (to-absyn #'s) (to-absyn #'e))]
     [(with-continuation-mark key value result)
      (WithContinuationMark (to-absyn #'key)
                            (to-absyn #'value)
@@ -323,7 +328,8 @@
     [(module name:id lang:expr (#%plain-module-begin forms ...))
      (parameterize ([current-module path]
                     [current-module-imports (set)]
-                    [current-directory (path-only path)])
+                    [current-directory (path-only path)]
+                    [identifier-table (make-free-id-table)])
        (define mod-id (syntax-e #'name))
        (log-rjs-info "[absyn] ~a" mod-id)
        (let* ([ast (filter-map to-absyn (syntax->list #'(forms ...)))]
@@ -467,12 +473,13 @@
 
 ;;;----------------------------------------------------------------------------
 
-(module+ test
+#;(module+ test
   (require rackunit
            "util.rkt"
            "moddeps.rkt")
   (define-syntax-rule (to-absyn/expand stx)
-    (parameterize ([global-export-graph (hash)])
+    (parameterize ([global-export-graph (hash)]
+                   [identifier-table (make-free-id-table)])
       (to-absyn/top (expand stx))))
   (define (ident i)
     (match (identifier-binding i)

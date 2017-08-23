@@ -11,7 +11,7 @@
 (require/typed racket/string
   [string-prefix? (-> String String Boolean)])
 
-(provide fresh-id
+(provide fresh-id-symbol
          fresh-id-counter
          reserved-keyword?
          normalize-symbol)
@@ -109,8 +109,8 @@
 ;; Used when test-environment? is true.
 (define fresh-id-counter (make-parameter 0))
 
-(: fresh-id (-> Symbol Symbol))
-(define fresh-id
+(: fresh-id-symbol (-> Symbol Symbol))
+(define fresh-id-symbol
   (if (test-environment?)
       gensym
       (λ (id)
@@ -120,7 +120,7 @@
   (check-equal?
    (parameterize ([test-environment? #t]
                   [fresh-id-counter 0])
-     (list (fresh-id 'foo)
+     (list (fresh-id-symbol 'foo)
            (fresh-id-counter)))
    (list 'foo1 1)
    "fresh-id counter should get incremented"))

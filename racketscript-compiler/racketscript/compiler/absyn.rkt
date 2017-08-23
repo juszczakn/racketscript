@@ -1,6 +1,7 @@
 #lang typed/racket/base
 
-(require "language.rkt")
+(require "language.rkt"
+         "ident.rkt")
 
 (provide (all-defined-out))
 
@@ -75,15 +76,15 @@
            ;; freshened.
            (LetValues         [bindings : (Listof Binding)]
                               [body     : (Listof Expr)])
-           (Set!              [id       : Symbol] [expr : Expr])
+           (Set!              [id       : LocalIdent] [expr : Expr])
 
            (WithContinuationMark   [key    : Expr]
                                    [value  : Expr]
                                    [result : Expr])]
 
-  [Ident  (LocalIdent         [id : Symbol])
-          (ImportedIdent      [id : Symbol] [src-mod : Module-Path] [reachable? : Boolean])
-          (TopLevelIdent      [id : Symbol])]
+  [Ident  LocalIdent
+          ImportedIdent
+          TopLevelIdent]
 
   [Begin   (Listof TopLevelForm)]
 
@@ -91,17 +92,25 @@
 
   [Binding      (Pairof Args Expr)]
 
-  [Args         (Listof Symbol)]
+  [Args         (Listof LocalIdent)]
 
-  [Formals      Symbol
-                (Listof Symbol)
-                (Pairof (Listof Symbol) Symbol)])
+  [Formals      LocalIdent
+                (Listof LocalIdent)
+                (Pairof (Listof LocalIdent) LocalIdent)])
 
+(struct LocalIdent     ([id : Symbol]))
+(struct ImportedIdent  ([id : Symbol] [src-mod : Module-Path] [reachable? : Boolean]))
+(struct TopLevelIdent  ([id : Symbol]))
 
 (: lambda-arity (-> PlainLambda (U Natural arity-at-least)))
 (define (lambda-arity f)
   (define frmls (PlainLambda-formals f))
   (cond
-    [(symbol? frmls) (arity-at-least 0)]
+    [(LocalIdent? frmls) (arity-at-least 0)]
     [(list? frmls) (length frmls)]
     [(pair? frmls) (arity-at-least (length (car frmls)))]))
+
+
+(: fresh-id (-> Symbol LocalIdent))
+(define (fresh-id sym)
+  (LocalIdent (fresh-id-symbol sym)))

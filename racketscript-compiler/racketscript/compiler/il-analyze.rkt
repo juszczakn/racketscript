@@ -6,7 +6,8 @@
          racket/bool
          "language.rkt"
          "util.rkt"
-         "il.rkt")
+         "il.rkt"
+         "ident.rkt")
 
 (provide self-tail->loop
          lift-returns
@@ -511,7 +512,7 @@
       [(ILLambda args body)
        (parameterize ([lambda-name vardec]
                       [lambda-formals args]
-                      [lambda-start-label (fresh-id 'lambda-start)]
+                      [lambda-start-label (fresh-id-symbol 'lambda-start)]
                       [lambda-updated-formals #f])
          (define body* : ILStatement*
            (let ([s* (handle-stm* body)]
@@ -571,7 +572,7 @@
             (let ([old-updated-frmls (lambda-updated-formals)])
               (if (false? old-updated-frmls)
                   (map (λ (f)
-                         (fresh-id (string->symbol (format "_~a" f))))
+                         (fresh-id-symbol (string->symbol (format "_~a" f))))
                        (lambda-formals))
                   old-updated-frmls)))
           (lambda-updated-formals new-frmls)
