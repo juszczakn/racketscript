@@ -7,10 +7,7 @@
 
 (provide (all-defined-out)
          (prefix-out IL
-                     (combine-out
-                      (struct-out SimpleProvide)
-                      (struct-out RenamedProvide)
-                      (struct-out IfClause))))
+                     (struct-out IfClause)))
 
 (define-type        ILProgram ILStatement*)
 (define-predicate   ILProgram? ILProgram)
@@ -87,8 +84,8 @@
                  (ILThrow       [expr       : ILExpr])]
 
   [ILProvide*    (Listof ILProvide)]
-  [ILProvide     SimpleProvide
-                 RenamedProvide])
+  [ILProvide     (ILSimpleProvide  [id       : IdentName])
+                 (ILRenamedProvide [local-id : IdentName] [exported-id : IdentName])])
 
 (: il-apply-optimization (-> ILModule (-> ILStatement* ILStatement*) ILModule))
 (define (il-apply-optimization mod opt)

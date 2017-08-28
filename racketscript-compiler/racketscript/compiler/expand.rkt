@@ -78,22 +78,28 @@
 
 (define (parse-provide r)
   (syntax-parse r
-    [v:identifier (list (SimpleProvide (syntax-e #'v)))]
+    [v:identifier (list (SimpleProvide (TopLevelIdent (syntax-e #'v))))]
     [((~datum for-meta) 0 p ...)
-     (stx-map (λ (pv) (SimpleProvide (syntax-e pv))) #'(p ...))]
+     (stx-map (λ (pv)
+                (SimpleProvide (TopLevelIdent (syntax-e pv))))
+              #'(p ...))]
     [((~datum all-defined)) (list (AllDefined (set)))]
     [((~datum all-defined-except) id ...)
      (list (AllDefined (list->set
-                        (stx-map syntax-e #'(id ...)))))]
+                        (stx-map (λ (i)
+                                   (TopLevelIdent (syntax-e i)))
+                                 #'(id ...)))))]
     [((~datum rename) local-id exported-id)
-     (list (RenamedProvide (syntax-e #'local-id)
+     (list (RenamedProvide (TopLevelIdent (syntax-e #'local-id))
                            (syntax-e #'exported-id)))]
     [((~datum prefix-all-defined) prefix-id)
-     (list (PrefixAllDefined (syntax-e #'prefix-id) (set)))]
+     (list (PrefixAllDefined (TopLevelIdent (syntax-e #'prefix-id)) (set)))]
     [((~datum prefix-all-defined-except) prefix-id id ...)
-     (list (PrefixAllDefined (syntax-e #'prefix-id)
+     (list (PrefixAllDefined (TopLevelIdent (syntax-e #'prefix-id))
                              (list->set
-                              (stx-map syntax-e #'(id ...)))))]
+                              (stx-map (λ (i)
+                                         (TopLevelIdent (syntax-e i)))
+                                       #'(id ...)))))]
     [((~datum all-from) p ...) '()]
     [((~datum all-from-except) p ...) '()]
     [((~datum for-meta) 1 p ...) '()]
@@ -165,13 +171,22 @@
     [(define-values (name)
        (#%plain-app (~datum #%js-ffi) (quote (~datum require)) (quote mod:str)))
      ;; HACK: Special case for JSRequire
-     (JSRequire (syntax-e #'name) (syntax-e #'mod) 'default)]
+     (define absyn-ident (TopLevelIdent (syntax-e #'name)))
+     (dict-set! (identifier-table) #'name absyn-ident)
+     (JSRequire absyn-ident (syntax-e #'mod) 'default)]
     [(define-values (name)
        (#%plain-app (~datum #%js-ffi) (quote (~datum require)) (quote *) (quote mod:str)))
      ;; HACK: Special case for JSRequire
-     (JSRequire (syntax-e #'name) (syntax-e #'mod) '*)]
+     (define absyn-ident (TopLevelIdent (syntax-e #'name)))
+     (dict-set! (identifier-table) #'name absyn-ident)
+     (JSRequire absyn-ident (syntax-e #'mod) '*)]
     [(define-values (id ...) b)
-     (DefineValues (to-absyn #'(id ...)) (to-absyn #'b))]
+     (DefineValues (stx-map (λ (i)
+                              (define absyn-id (TopLevelIdent (syntax-e i)))
+                              (dict-set! (identifier-table) #'i absyn-id)
+                              absyn-id)
+                            #'(id ...))
+                   (to-absyn #'b))]
     [(#%top . x) (TopId (syntax-e #'x))]
     [(#%variable-reference x) (to-absyn #'x)]
     [i:identifier #:when (quoted?) (syntax-e #'i)]

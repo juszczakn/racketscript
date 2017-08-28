@@ -17,6 +17,7 @@
   #:alias
   [Program      TopLevelForm]
   [ModuleName   (U Symbol Path)]
+  [IdentName    Symbol]
 
   #:forms
   ;; Top Level Forms
@@ -27,24 +28,24 @@
                             Begin]
 
   [GeneralTopLevelForm      Expr
-                            (DefineValues [ids : Args] [expr : Expr])
+                            (DefineValues [ids : TopLevelDefineIds] [expr : Expr])
                             ;; DefineSyntaxes
 
                             ;; Same as ILRequire, but can't use to
                             ;; avoid cyclic depnedency.
-                            (JSRequire [alias : Symbol]
+                            (JSRequire [alias : TopLevelIdent]
                                        [path : (U Symbol Path-String)]
                                        [mode : (U 'default '*)])
                             #;Require*]
 
   ;; Module Level Forms
   [Provide*            (Listof Provide)]
-  [Provide             (SimpleProvide     [id       : Symbol])
-                       (RenamedProvide    [local-id : Symbol]
-                                          [exported-id : Symbol])
-                       (AllDefined        [exclude : (Setof Symbol)])
-                       (PrefixAllDefined  [prefix-id : Symbol]
-                                          [exclude : (Setof Symbol)])]
+  [Provide             (SimpleProvide     [id       : TopLevelIdent])
+                       (RenamedProvide    [local-id : TopLevelIdent]
+                                          [exported-id : IdentName])
+                       (AllDefined        [exclude : (Setof TopLevelIdent)])
+                       (PrefixAllDefined  [prefix-id : IdentName]
+                                          [exclude : (Setof TopLevelIdent)])]
   [ModuleLevelForm     GeneralTopLevelForm
                        Provide*
                        SubModuleForm]
@@ -54,8 +55,8 @@
   ;; Expressions
 
   [Expr    Ident
-           (TopId             [id       : Symbol])
-           (VarRef            [var      : (Option (U Symbol TopId))])
+           (TopId             [id       : IdentName])
+           (VarRef            [var      : (Option (U IdentName TopId))])
            (Quote             [datum    : Any])
 
 
@@ -74,7 +75,7 @@
 
            ;; This also acts as LetRecValues because Absyn is
            ;; freshened.
-           (LetValues         [bindings : (Listof Binding)]
+           (LetValues         [bindings : (Listof LocalBindingPair)]
                               [body     : (Listof Expr)])
            (Set!              [id       : LocalIdent] [expr : Expr])
 
@@ -90,7 +91,8 @@
 
   ;; Bindings and Formal Arguments
 
-  [Binding      (Pairof Args Expr)]
+  [LocalBindingPair      (Pairof Args Expr)]
+  [TopLevelDefineIds     (Listof TopLevelIdent)]
 
   [Args         (Listof LocalIdent)]
 
@@ -98,9 +100,9 @@
                 (Listof LocalIdent)
                 (Pairof (Listof LocalIdent) LocalIdent)])
 
-(struct LocalIdent     ([id : Symbol]))
-(struct ImportedIdent  ([id : Symbol] [src-mod : Module-Path] [reachable? : Boolean]))
-(struct TopLevelIdent  ([id : Symbol]))
+(struct LocalIdent     ([id : IdentName]))
+(struct ImportedIdent  ([id : IdentName] [src-mod : Module-Path] [reachable? : Boolean]))
+(struct TopLevelIdent  ([id : IdentName]))
 
 (: lambda-arity (-> PlainLambda (U Natural arity-at-least)))
 (define (lambda-arity f)

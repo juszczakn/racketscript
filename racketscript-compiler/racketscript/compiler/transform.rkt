@@ -67,9 +67,10 @@
     (list->set
      (append (~> (filter DefineValues? forms)
                  (append-map DefineValues-ids _)
-                 (map LocalIdent-id _))
+                 (map TopLevelIdent-id _))
              (~> (filter JSRequire? forms)
-                 (map JSRequire-alias _)))))
+                 (map JSRequire-alias  _)
+                 (map TopLevelIdent-id _)))))
 
   (: add-provides! (-> ILProvide* Void))
   (define (add-provides! p*)
@@ -124,7 +125,7 @@
            [(JSRequire? form)
             (set-box! js-requires
                       (cons (ILRequire (~a (JSRequire-path form))
-                                       (JSRequire-alias form)
+                                       (TopLevelIdent-id (JSRequire-alias form))
                                        (JSRequire-mode form))
                             (unbox js-requires)))
             '()]
@@ -174,33 +175,41 @@
      (append1 stms v)]
     [(DefineValues? form)
      (match-define (DefineValues ids expr) form)
-     (absyn-binding->il (cons ids expr))]
+     ;;TODO: absyn-binding->il needs to be fixed to take TopLevelIdent
+     (absyn-binding->il (cons (map LocalIdent (map TopLevelIdent-id ids))
+                              expr))]
     [(JSRequire? form) (error 'absyn-gtl-form->il
                               "Required should be hoisted")]))
 
 (: absyn-provide->il (-> Provide* (Setof Symbol) ILProvide*))
 (define (absyn-provide->il forms top-level-defs)
   (: defs-without-exclude (-> (Setof Symbol) (Setof Symbol) (Listof Symbol)))
-  (define (defs-without-exclude def-set exclude-lst)
-    (~> (set->list def-set)
-        (filter (λ (id) (not (set-member? exclude-lst id))) _)))
+  (define (defs-without-exclude defs exclude-lst)
+    (filter (λ (id)
+              (not (set-member? exclude-lst id)))
+            (set->list defs)))
 
   (for/fold ([result : ILProvide* '()])
             ([form forms])
+    ;;TODO: This set<->map needs to be cleaned up.
     (match form
-      [(SimpleProvide _) (cons form result)]
-      [(RenamedProvide _ _) (cons form result)]
+      [(SimpleProvide (TopLevelIdent id)) (cons (ILSimpleProvide id) result)]
+      [(RenamedProvide (TopLevelIdent local-id) export-id)
+       (cons (ILRenamedProvide local-id export-id) result)]
       [(AllDefined exclude)
-       (~> (defs-without-exclude top-level-defs exclude)
-           (map SimpleProvide _)
+       (~> (list->set (set-map exclude TopLevelIdent-id))
+           (defs-without-exclude top-level-defs _)
+           (map ILSimpleProvide _)
            (append result _))]
       [(PrefixAllDefined prefix-id exclude)
-       (let* ([to-export (defs-without-exclude top-level-defs exclude)]
+       (: exclude-id-syms (Setof Symbol))
+       (define exclude-id-syms (list->set (set-map exclude TopLevelIdent-id)))
+       (let* ([to-export (defs-without-exclude top-level-defs exclude-id-syms)]
               [new-ids (map (λ (id)
                               (format-symbol "~a~a" prefix-id id))
                             to-export)])
          (append result
-                 (map RenamedProvide to-export new-ids)))])))
+                 (map ILRenamedProvide to-export new-ids)))])))
 
 (: absyn-expr->il (-> Expr Boolean (Values ILStatement* ILExpr)))
 ;;; An expression in Racket may need to be split into several
@@ -582,7 +591,7 @@
     [_ (error (~a "unsupported expr " expr))]))
 
 
-(: absyn-binding->il (-> Binding ILStatement*))
+(: absyn-binding->il (-> LocalBindingPair ILStatement*))
 (define (absyn-binding->il b)
   (match-define (cons args expr) b)
   (define-values (stms v) (absyn-expr->il expr #f))
@@ -799,9 +808,7 @@
        (PlainApp (ImportedIdent '>= '#%kernel #t)
                  (list
                   v
-                  (Quote (sub1
-                          (length
-                           (improper->proper frmls)))))))]))
+                  (Quote (length (car frmls))))))]))
 
 (define-type ProcedureArity (U arity-at-least Exact-Nonnegative-Integer))
 (: resolve-procedure-arities (-> (Listof ProcedureArity)
