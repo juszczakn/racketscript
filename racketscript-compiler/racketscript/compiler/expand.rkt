@@ -70,12 +70,8 @@
 ;;;-----------------------------------------------------------------------------
 ;;;; Conversion and expansion
 
-#;(define (require-parse r)
-  (syntax-parse r
-    [v:str (Require (syntax-e #'v) #f)]
-    [v:identifier (Require (syntax-e #'v) #f)]
-    [_ (error "unsupported require format")]))
-
+;; Syntax:ProvideForm -> Provide*
+;; Returns list of absyn provide forms.
 (define (parse-provide r)
   (syntax-parse r
     [v:identifier (list (SimpleProvide (TopLevelIdent (syntax-e #'v))))]
@@ -153,9 +149,7 @@
                 (parameterize ([quoted? #t])
                   (to-absyn #'e)))] ;;;; TODO: HACK! See what actually happens
     [(quote-syntax e ...) '()]
-    [(#%require x ...)
-     #f
-     #;(map require-parse (syntax->list #'(x ...)))]
+    [(#%require x ...) #f]
     [(#%provide x ...)
      (append-map parse-provide (syntax->list #'(x ...)))]
     [(case-lambda . clauses)
@@ -488,7 +482,7 @@
 
 ;;;----------------------------------------------------------------------------
 
-#;(module+ test
+(module+ test
   (require rackunit
            "util.rkt"
            "moddeps.rkt")
@@ -507,22 +501,23 @@
 
 ;;; Check values
 
-  (check-equal? (to-absyn/expand #'42)
-                (Quote 42))
-  (check-equal? (to-absyn/expand #'"Hello World")
-                (Quote "Hello World"))
-  (check-equal? (to-absyn/expand #`'symbol)
-                (Quote 'symbol))
-  (check-equal? (to-absyn/expand #'#(1 2 3 4))
-                (Quote #(1 2 3 4))
-                "vector")
-  (check-equal? (to-absyn/expand #''(1 2 3 4))
-                (Quote '(1 2 3 4))
-                "list")
-  (check-equal? (to-absyn/expand #''(1 2 "hi!" 3 #(1 2 3)))
-                (Quote '(1 2 "hi!" 3 #(1 2 3))))
-  (check-equal? (to-absyn/expand #'#f)
-                (Quote #f))
+  (test-case "checks for values"
+    (check-equal? (to-absyn/expand #'42)
+                  (Quote 42))
+    (check-equal? (to-absyn/expand #'"Hello World")
+                  (Quote "Hello World"))
+    (check-equal? (to-absyn/expand #`'symbol)
+                  (Quote 'symbol))
+    (check-equal? (to-absyn/expand #'#(1 2 3 4))
+                  (Quote #(1 2 3 4))
+                  "vector")
+    (check-equal? (to-absyn/expand #''(1 2 3 4))
+                  (Quote '(1 2 3 4))
+                  "list")
+    (check-equal? (to-absyn/expand #''(1 2 "hi!" 3 #(1 2 3)))
+                  (Quote '(1 2 "hi!" 3 #(1 2 3))))
+    (check-equal? (to-absyn/expand #'#f)
+                  (Quote #f)))
 
   ;; Check imported ident
 
@@ -530,27 +525,26 @@
   #;(check-equal? (to-absyn/expand #'displayln)
                 (ident #'displayln))
 
-  ;; Check lambdas
+  (test-case "Check lambda"
+    (check-equal? (to-absyn/expand #`(λ (x) x))
+                  (PlainLambda '(x) (list (LocalIdent 'x))))
+    (check-equal? (to-absyn/expand #`(λ x x))
+                  (PlainLambda 'x (list (LocalIdent 'x))))
+    (check-equal? (to-absyn/expand #`(λ (a b . c) (+ a b (reduce + c))))
+                  (PlainLambda
+                   '((a b) . c)
+                   (list
+                    (PlainApp (ident #'+)
+                              (list (LocalIdent 'a) (LocalIdent'b)
+                                    (PlainApp (TopId'reduce)
+                                              (list (ident #'+) (LocalIdent 'c)))))))))
 
-  (check-equal? (to-absyn/expand #`(λ (x) x))
-                (PlainLambda '(x) (list (LocalIdent 'x))))
-  (check-equal? (to-absyn/expand #`(λ x x))
-                (PlainLambda 'x (list (LocalIdent 'x))))
-  (check-equal? (to-absyn/expand #`(λ (a b . c) (+ a b (reduce + c))))
-                (PlainLambda
-                 '((a b) . c)
-                 (list
-                  (PlainApp (ident #'+)
-                            (list (LocalIdent 'a) (LocalIdent'b)
-                                  (PlainApp (TopId'reduce)
-                                            (list (ident #'+) (LocalIdent 'c))))))))
-  ;; Check application
-
-  (check-equal? (to-absyn/expand #`(print "hello"))
-                (PlainApp (ident #'print) (list (Quote "hello"))))
-  (check-equal? (to-absyn/expand #`((λ (x) x) 42))
-                (PlainApp (PlainLambda '(x) (list (LocalIdent 'x)))
-                          (list (Quote 42))))
+  (test-case "Check application"
+    (check-equal? (to-absyn/expand #`(print "hello"))
+                  (PlainApp (ident #'print) (list (Quote "hello"))))
+    (check-equal? (to-absyn/expand #`((λ (x) x) 42))
+                  (PlainApp (PlainLambda '(x) (list (LocalIdent 'x)))
+                            (list (Quote 42)))))
 
   ;; If expresion
 
@@ -561,135 +555,132 @@
   (check-equal? (to-absyn/expand #'x)
                 (TopId 'x))
 
-  ;; Check let values, lambdas, applications and more
+  (test-case "Check let values, lambdas, applications and more"
+    (check-equal? (to-absyn/expand #'(let-values ([(a) 1] [(b) 2])
+                                       a b))
+                  (LetValues (list (cons '(a) (Quote 1))
+                                   (cons '(b) (Quote 2)))
+                             (list (LocalIdent 'a) (LocalIdent 'b)))
+                  "let values")
 
-  (check-equal? (to-absyn/expand #'(let-values ([(a) 1] [(b) 2])
-                                     a b))
-                (LetValues (list (cons '(a) (Quote 1))
-                                 (cons '(b) (Quote 2)))
-                           (list (LocalIdent 'a) (LocalIdent 'b)))
-                "let values")
+    (check-equal? (to-absyn/expand #'(let-values ([(a) '(1 2)] [(b) (+ 2 4)])
+                                       a b))
+                  (LetValues (list (cons '(a) (Quote '(1 2)))
+                                   (cons '(b) (PlainApp (ident #'+) (list (Quote 2) (Quote 4)))))
+                             (list (LocalIdent 'a) (LocalIdent 'b))))
 
-  (check-equal? (to-absyn/expand #'(let-values ([(a) '(1 2)] [(b) (+ 2 4)])
-                                     a b))
-                (LetValues (list (cons '(a) (Quote '(1 2)))
-                                 (cons '(b) (PlainApp (ident #'+) (list (Quote 2) (Quote 4)))))
-                           (list (LocalIdent 'a) (LocalIdent 'b))))
-
-  (check-equal? (to-absyn/expand
-                 #`(define-values (fact)
-                     (λ (n)
-                       (if (zero? n)
-                           0
-                           (* n (fact (sub1 n)))))))
-                (DefineValues '(fact)
-                  (PlainLambda
-                   '(n)
-                   (list
-                    (If (PlainApp (ident #'zero?) (list (LocalIdent 'n)))
-                        (Quote 0)
-                        (PlainApp
-                         (ident #'*)
-                         (list (LocalIdent 'n)
-                               (PlainApp
-                                (TopId 'fact)
-                                (list (PlainApp (ident #'sub1)
-                                                (list (LocalIdent 'n))))))))))))
-  (check-equal?
-   (to-absyn/expand
-    #`(letrec-values
-          ([(even? odd?)
-            (values
-             (lambda (n)
-               (or (zero? n)
-                   (odd? (sub1 n))))
-             (lambda (n)
-               (or (not (zero? n))
-                   (even? (sub1 n)))))])
-        (or (even? 50))))
-   (LetValues
-    (list
-     (cons
-      '(even? odd?)
-      (PlainApp
-       (ident #'values)
-       (list
-        (PlainLambda
-         '(n)
-         (list
-          (LetValues
-           (list (cons '(or-part) (PlainApp (ident #'zero?) (list (LocalIdent 'n)))))
-           (list
-            (If
-             (LocalIdent 'or-part)
-             (LocalIdent 'or-part)
-             (PlainApp (LocalIdent 'odd?)
-                       (list (PlainApp (ident #'sub1) (list (LocalIdent 'n))))))))))
-        (PlainLambda
-         '(n)
-         (list
-          (LetValues
-           (list (cons '(or-part) (PlainApp (ident #'not)
-                                            (list (PlainApp (ident #'zero?)
-                                                            (list (LocalIdent 'n)))))))
-           (list
-            (If
-             (LocalIdent 'or-part)
-             (LocalIdent 'or-part)
-             (PlainApp (LocalIdent 'even?)
-                       (list (PlainApp (ident #'sub1) (list (LocalIdent 'n))))))))))))))
-    (list (PlainApp (LocalIdent 'even?) (list (Quote 50))))))
-
-;;; Begin expressions
-
-  (check-equal?
-   (to-absyn/expand #'(begin
-                        (write "Hello!")
-                        (write "Begin")
-                        (write "Expression")))
-   (list
-    (PlainApp (ident #'write) (list (Quote "Hello!")))
-    (PlainApp (ident #'write) (list (Quote "Begin")))
-    (PlainApp (ident #'write) (list (Quote "Expression")))))
-
-  (check-equal?
-   (to-absyn/expand #'(begin0 (write "Hello!")
-                        (write "Begin")
-                        (write "Expression")))
-   (Begin0
-     (PlainApp (ident #'write) (list (Quote "Hello!")))
-               (list
-                (PlainApp (ident #'write) (list (Quote "Begin")))
-                (PlainApp (ident #'write) (list (Quote "Expression"))))))
-
-  (check-equal?
-   (to-absyn/expand #'(define (foobar a b c)
-                        (write a)
-                        (write b)
-                        (write c)))
-   (DefineValues
-     '(foobar)
-     (PlainLambda
-      '(a b c)
+    (check-equal? (to-absyn/expand
+                   #`(define-values (fact)
+                       (λ (n)
+                         (if (zero? n)
+                             0
+                             (* n (fact (sub1 n)))))))
+                  (DefineValues '(fact)
+                    (PlainLambda
+                     '(n)
+                     (list
+                      (If (PlainApp (ident #'zero?) (list (LocalIdent 'n)))
+                          (Quote 0)
+                          (PlainApp
+                           (ident #'*)
+                           (list (LocalIdent 'n)
+                                 (PlainApp
+                                  (TopId 'fact)
+                                  (list (PlainApp (ident #'sub1)
+                                                  (list (LocalIdent 'n))))))))))))
+    (check-equal?
+     (to-absyn/expand
+      #`(letrec-values
+            ([(even? odd?)
+              (values
+               (lambda (n)
+                 (or (zero? n)
+                     (odd? (sub1 n))))
+               (lambda (n)
+                 (or (not (zero? n))
+                     (even? (sub1 n)))))])
+          (or (even? 50))))
+     (LetValues
       (list
-       (PlainApp (ident #'write) (list (LocalIdent'a)))
-       (PlainApp (ident #'write) (list (LocalIdent'b)))
-       (PlainApp (ident #'write) (list (LocalIdent'c)))))))
+       (cons
+        '(even? odd?)
+        (PlainApp
+         (ident #'values)
+         (list
+          (PlainLambda
+           '(n)
+           (list
+            (LetValues
+             (list (cons '(or-part) (PlainApp (ident #'zero?) (list (LocalIdent 'n)))))
+             (list
+              (If
+               (LocalIdent 'or-part)
+               (LocalIdent 'or-part)
+               (PlainApp (LocalIdent 'odd?)
+                         (list (PlainApp (ident #'sub1) (list (LocalIdent 'n))))))))))
+          (PlainLambda
+           '(n)
+           (list
+            (LetValues
+             (list (cons '(or-part) (PlainApp (ident #'not)
+                                              (list (PlainApp (ident #'zero?)
+                                                              (list (LocalIdent 'n)))))))
+             (list
+              (If
+               (LocalIdent 'or-part)
+               (LocalIdent 'or-part)
+               (PlainApp (LocalIdent 'even?)
+                         (list (PlainApp (ident #'sub1) (list (LocalIdent 'n))))))))))))))
+      (list (PlainApp (LocalIdent 'even?) (list (Quote 50)))))))
 
-;;; Case Lambda
+  (test-case "begin expressions"
+    (check-equal?
+     (to-absyn/expand #'(begin
+                          (write "Hello!")
+                          (write "Begin")
+                          (write "Expression")))
+     (list
+      (PlainApp (ident #'write) (list (Quote "Hello!")))
+      (PlainApp (ident #'write) (list (Quote "Begin")))
+      (PlainApp (ident #'write) (list (Quote "Expression")))))
 
-  (check-equal?
-   (to-absyn/expand (expand #'(case-lambda
-                                [(a b) (+ a b)]
-                                [(a b c) (* a b c)])))
-   (CaseLambda
-    (list
-     (PlainLambda '(a b) (list (PlainApp (ident #'+)
-                                         (list (LocalIdent 'a) (LocalIdent 'b)))))
-     (PlainLambda '(a b c) (list (PlainApp (ident #'*)
-                                           (list (LocalIdent 'a)
-                                                 (LocalIdent 'b)
-                                                 (LocalIdent 'c))))))))
+    (check-equal?
+     (to-absyn/expand #'(begin0 (write "Hello!")
+                          (write "Begin")
+                          (write "Expression")))
+     (Begin0
+       (PlainApp (ident #'write) (list (Quote "Hello!")))
+       (list
+        (PlainApp (ident #'write) (list (Quote "Begin")))
+        (PlainApp (ident #'write) (list (Quote "Expression"))))))
+
+    (check-equal?
+     (to-absyn/expand #'(define (foobar a b c)
+                          (write a)
+                          (write b)
+                          (write c)))
+     (DefineValues
+       '(foobar)
+       (PlainLambda
+        '(a b c)
+        (list
+         (PlainApp (ident #'write) (list (LocalIdent'a)))
+         (PlainApp (ident #'write) (list (LocalIdent'b)))
+         (PlainApp (ident #'write) (list (LocalIdent'c))))))))
+
+  (test-case "case lambdas"
+    (check-equal?
+     (to-absyn/expand (expand #'(case-lambda
+                                  [(a b) (+ a b)]
+                                  [(a b c) (* a b c)])))
+     (CaseLambda
+      (list
+       (PlainLambda '(a b) (list (PlainApp (ident #'+)
+                                           (list (LocalIdent 'a) (LocalIdent 'b)))))
+       (PlainLambda '(a b c) (list (PlainApp (ident #'*)
+                                             (list (LocalIdent 'a)
+                                                   (LocalIdent 'b)
+                                                   (LocalIdent 'c)))))))))
 
 ;;; Check module and provides
 
@@ -714,32 +705,33 @@
                                    (PlainApp (ident #'print)
                                              (list (Quote "Hello")))))))))
 
-  (check-equal? (parse-provide #'foo) (list (SimpleProvide 'foo)))
-  (check-equal? (parse-provide #'(all-defined)) (list (AllDefined (set))))
-  (check-equal? (parse-provide #'(all-defined-except foo bar))
-                (list (AllDefined (set 'foo 'bar))))
-  (check-equal? (parse-provide #'(rename foo bar))
-                (list (RenamedProvide 'foo 'bar)))
-  (check-equal? (parse-provide #'(prefix-all-defined foo))
-                (list (PrefixAllDefined 'foo (set))))
-  (check-equal? (parse-provide #'(prefix-all-defined-except foo add sub))
-                (list (PrefixAllDefined 'foo (set 'add 'sub))))
+  (test-case "parse provide"
+    (check-equal? (parse-provide #'foo) (list (SimpleProvide 'foo)))
+    (check-equal? (parse-provide #'(all-defined)) (list (AllDefined (set))))
+    (check-equal? (parse-provide #'(all-defined-except foo bar))
+                  (list (AllDefined (set 'foo 'bar))))
+    (check-equal? (parse-provide #'(rename foo bar))
+                  (list (RenamedProvide 'foo 'bar)))
+    (check-equal? (parse-provide #'(prefix-all-defined foo))
+                  (list (PrefixAllDefined 'foo (set))))
+    (check-equal? (parse-provide #'(prefix-all-defined-except foo add sub))
+                  (list (PrefixAllDefined 'foo (set 'add 'sub))))
 
-  (test-case "check normal and prefix provides in module"
-    (define module-output
-      (parameterize ([global-export-graph (hash)])
-        (convert (expand
-                  #'(module foo racket/base
-                      (provide (prefix-out f: (combine-out foo bar)))
-                      (define foo #f)
-                      (define bar #f)))
-                 (build-path "/tmp/" "racketscript-test-expand.rkt"))))
-    (check-equal? (Module-forms module-output)
-                  (list
-                   (list (RenamedProvide 'foo 'f:foo)
-                         (RenamedProvide 'bar 'f:bar))
-                   (DefineValues '(foo) (Quote #f))
-                   (DefineValues '(bar) (Quote #f)))))
+    (test-case "check normal and prefix provides in module"
+      (define module-output
+        (parameterize ([global-export-graph (hash)])
+          (convert (expand
+                    #'(module foo racket/base
+                        (provide (prefix-out f: (combine-out foo bar)))
+                        (define foo #f)
+                        (define bar #f)))
+                   (build-path "/tmp/" "racketscript-test-expand.rkt"))))
+      (check-equal? (Module-forms module-output)
+                    (list
+                     (list (RenamedProvide 'foo 'f:foo)
+                           (RenamedProvide 'bar 'f:bar))
+                     (DefineValues '(foo) (Quote #f))
+                     (DefineValues '(bar) (Quote #f))))))
 
 ;;; Check module flattening
   (test-case "check flattening of module by splitting as per phases"
