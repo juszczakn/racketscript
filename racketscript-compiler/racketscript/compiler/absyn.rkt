@@ -100,9 +100,13 @@
                 (Listof LocalIdent)
                 (Pairof (Listof LocalIdent) LocalIdent)])
 
+(struct TopLevelIdent  ([id : IdentName]) #:transparent)
 (struct LocalIdent     ([id : IdentName]))
-(struct ImportedIdent  ([id : IdentName] [src-mod : Module-Path] [reachable? : Boolean]))
-(struct TopLevelIdent  ([id : IdentName]))
+(struct ImportedIdent
+  ([id : IdentName]
+   [src-mod : Module-Path]
+   [reachable? : Boolean])
+  #:transparent)
 
 (: lambda-arity (-> PlainLambda (U Natural arity-at-least)))
 (define (lambda-arity f)

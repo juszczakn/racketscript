@@ -499,10 +499,8 @@
        ;;TODO: Just considering unreachable idents for tests here.
        (ImportedIdent mod-id mod-path* #f)]))
 
-;;; Check values
-
-  (test-case "checks for values"
-    (check-equal? (to-absyn/expand #'42)
+  (test-case "Checks for values"
+    (check-equal? (to-absyn/expand #''42)
                   (Quote 42))
     (check-equal? (to-absyn/expand #'"Hello World")
                   (Quote "Hello World"))
@@ -522,7 +520,7 @@
   ;; Check imported ident
 
   ;;TODO: We rename library modules, so ignore this test for now
-  #;(check-equal? (to-absyn/expand #'displayln)
+  (check-equal? (to-absyn/expand #'displayln)
                 (ident #'displayln))
 
   (test-case "Check lambda"
@@ -539,7 +537,7 @@
                                     (PlainApp (TopId'reduce)
                                               (list (ident #'+) (LocalIdent 'c)))))))))
 
-  (test-case "Check application"
+  #;(test-case "Check application"
     (check-equal? (to-absyn/expand #`(print "hello"))
                   (PlainApp (ident #'print) (list (Quote "hello"))))
     (check-equal? (to-absyn/expand #`((λ (x) x) 42))
@@ -555,7 +553,7 @@
   (check-equal? (to-absyn/expand #'x)
                 (TopId 'x))
 
-  (test-case "Check let values, lambdas, applications and more"
+  #;(test-case "Check let values, lambdas, applications and more"
     (check-equal? (to-absyn/expand #'(let-values ([(a) 1] [(b) 2])
                                        a b))
                   (LetValues (list (cons '(a) (Quote 1))
@@ -633,7 +631,7 @@
                          (list (PlainApp (ident #'sub1) (list (LocalIdent 'n))))))))))))))
       (list (PlainApp (LocalIdent 'even?) (list (Quote 50)))))))
 
-  (test-case "begin expressions"
+  #;(test-case "begin expressions"
     (check-equal?
      (to-absyn/expand #'(begin
                           (write "Hello!")
@@ -668,7 +666,7 @@
          (PlainApp (ident #'write) (list (LocalIdent'b)))
          (PlainApp (ident #'write) (list (LocalIdent'c))))))))
 
-  (test-case "case lambdas"
+  #;(test-case "case lambdas"
     (check-equal?
      (to-absyn/expand (expand #'(case-lambda
                                   [(a b) (+ a b)]
@@ -684,7 +682,7 @@
 
 ;;; Check module and provides
 
-  (test-case "simple module"
+  #;(test-case "simple module"
     (define module-output
       (parameterize ([global-export-graph (hash)])
         (convert (expand
@@ -705,7 +703,7 @@
                                    (PlainApp (ident #'print)
                                              (list (Quote "Hello")))))))))
 
-  (test-case "parse provide"
+  #;(test-case "parse provide"
     (check-equal? (parse-provide #'foo) (list (SimpleProvide 'foo)))
     (check-equal? (parse-provide #'(all-defined)) (list (AllDefined (set))))
     (check-equal? (parse-provide #'(all-defined-except foo bar))
@@ -734,7 +732,7 @@
                      (DefineValues '(bar) (Quote #f))))))
 
 ;;; Check module flattening
-  (test-case "check flattening of module by splitting as per phases"
+  #;(test-case "check flattening of module by splitting as per phases"
     (define (flatten-module-forms->datum forms)
       (for/hash ([(k v) (flatten-module-forms forms)])
         (values k (syntax->datum v))))
@@ -799,7 +797,7 @@
              .
              ((define-values (foo-3) (lambda () (#%app displayln '"Foo Phase 3"))))))))
 
-  (test-case "get quoted bindings in module"
+  #;(test-case "get quoted bindings in module"
     (define test-mod-1
       (expand
        #'(module foo racket
