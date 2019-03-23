@@ -25,6 +25,7 @@
          jsruntime-core-module
 
          primitive-modules
+         get-primitive-module
          ignored-module-imports-in-boot
          ignored-undefined-identifier?
 
@@ -79,9 +80,10 @@
   (let ([mod-name (match mod
                     ['core "core.js"]
                     [_ #:when (set-member? primitive-modules mod)
-                       (string-append
-                        (substring (symbol->string mod) 2)
-                        ".rkt.js")])])
+                       (let ([prim-mod (get-primitive-module mod)])
+                         (string-append
+                          (substring (symbol->string prim-mod) 2)
+                          ".rkt.js"))])])
     (path->complete-path
      (build-path (output-directory)
                  "runtime"
@@ -112,6 +114,9 @@
 (: primitive-modules (Setof (U Symbol Path)))
 (define primitive-modules
   (set '#%kernel
+       '#%runtime
+       '#%core
+       '#%main
        '#%utils
        '#%paramz
        '#%unsafe
@@ -126,6 +131,23 @@
        '#%foreign
        '#%place
        (build-path racketscript-runtime-dir "lib.rkt")))
+
+(: primitive-module-reexported-by (HashTable Symbol Symbol))
+;; These modules (key) can essentially be treated as aliases, as
+;; they simply re-export the provided symbols of another module (value).
+(define primitive-module-reexported-by
+  (hash
+   ;; The '#%kernel module combines '#%core, '#%runtime, and '#%main
+   ;; See: racket's boot/kernel.rkt
+   ;; TODO: We should consider splitting kernel.rkt up to mirror racket's codebase.
+   '#%runtime '#%kernel
+   '#%main '#%kernel
+   '#%core '#%kernel))
+
+(: get-primitive-module (-> Symbol Symbol))
+(define (get-primitive-module symb)
+  (hash-ref primitive-module-reexported-by symb (λ () symb)))
+
 
 ;;; ---------------------------------------------------------------------------
 

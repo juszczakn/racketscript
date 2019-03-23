@@ -181,8 +181,9 @@
   (cond
     [(path? in-path) in-path]
     [(and (symbol? in-path) (primitive-module? in-path))
-     (build-path racketscript-runtime-dir
-                 (~a (substring (symbol->string in-path) 2) ".rkt"))]
+     (let ([prim-mod (get-primitive-module in-path)])
+       (build-path racketscript-runtime-dir
+                   (~a (substring (symbol->string prim-mod) 2) ".rkt")))]
     [else (error 'actual-module-path "~a is not a primtive module" in-path)]))
 
 
